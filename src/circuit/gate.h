@@ -12,7 +12,7 @@ struct CircuitGate {
 
     struct GateLink {
         GatePtr destGate;
-        size_t destSlotIndex;
+        size_t destSlotIndex = 0;
     };
 
 private:
@@ -49,5 +49,7 @@ public:
         inputs[index] = std::move(link);
     }
 };
+
+using CircuitGatePtr = std::shared_ptr<CircuitGate>;
 
 #endif //CIRCUIT_GATE_H

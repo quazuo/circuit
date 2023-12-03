@@ -17,13 +17,11 @@ int main() {
     Gui gui;
     GLFWwindow* window = gui.init();
 
-    CircuitGate::GatePtr g1 = std::make_shared<CircuitGate>(CircuitGate({40, 50}, 1, 1));
-    CircuitGate::GatePtr g2 = std::make_shared<CircuitGate>(CircuitGate({40, 150}, 2, 2));
-    //CircuitGate::GatePtr g3 = std::make_shared<CircuitGate>(CircuitGate({270, 80}, 3, 3));
+    CircuitGatePtr g1 = std::make_shared<CircuitGate>(CircuitGate({40, 50}, 1, 1));
+    CircuitGatePtr g2 = std::make_shared<CircuitGate>(CircuitGate({40, 150}, 2, 2));
+    CircuitGatePtr g3 = std::make_shared<CircuitGate>(CircuitGate({270, 80}, 3, 3));
 
-    //g1->updateInput({ g2, 1 }, 0);
-
-    std::vector<CircuitGate::GatePtr> gates = { g1, g2 };
+    std::vector<CircuitGatePtr> gates = { g1, g2, g3 };
 
     while (!glfwWindowShouldClose(window)) {
         gui.render(gates);

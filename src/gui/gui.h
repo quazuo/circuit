@@ -25,8 +25,13 @@ class Gui {
 
     std::map<CircuitGate::GateID, GateRenderInfo> gatesRenderInfo;
 
-    std::optional<CircuitGate::GateLink> cachedLink;
-    enum { INPUT, OUTPUT } cachedType;
+    enum SlotType { INPUT, OUTPUT };
+
+    struct CachedLink {
+        CircuitGatePtr destGate;
+        size_t destSlotIndex;
+        SlotType cachedType;
+    };
 
     /* render constants */
     constexpr static float SLOT_RADIUS = 5.0f;
@@ -46,30 +51,28 @@ class Gui {
 public:
     GLFWwindow* init();
 
-    void render(std::vector<CircuitGate::GatePtr>& gates);
+    void render(std::vector<CircuitGatePtr>& gates);
 
     void shutdown();
 
 private:
     void renderGrid();
 
-    void renderGates(std::vector<CircuitGate::GatePtr>& gates);
+    void renderGates(std::vector<CircuitGatePtr>& gates);
 
-    void renderGate(CircuitGate::GatePtr& gate);
+    void renderGate(CircuitGatePtr& gate);
 
-    void renderGatesLinks(std::vector<CircuitGate::GatePtr>& gates);
+    void renderGatesLinks(std::vector<CircuitGatePtr>& gates);
 
-    ImVec2 getGateInputSlotPos(const CircuitGate::GatePtr &gate, size_t slotIndex);
+    ImVec2 getGateInputSlotPos(const CircuitGatePtr &gate, size_t slotIndex);
 
-    ImVec2 calcGateRectSize(const CircuitGate::GatePtr &gate);
+    ImVec2 calcGateRectSize(const CircuitGatePtr &gate);
 
-    ImVec2 getGateOutputSlotPos(const CircuitGate::GatePtr &gate, size_t slotIndex);
+    ImVec2 getGateOutputSlotPos(const CircuitGatePtr &gate, size_t slotIndex);
 
     void renderLink(ImVec2 p1, ImVec2 p2) const;
 
-    void handleInputSlot(CircuitGate::GatePtr &gate, size_t slotIndex);
-
-    void handleOutputSlot(CircuitGate::GatePtr &gate, size_t slotIndex);
+    void handleSlotDragDrop(CircuitGatePtr &gate, size_t slotIndex, SlotType slotType);
 };
 
 #endif //CIRCUIT_GUI_H

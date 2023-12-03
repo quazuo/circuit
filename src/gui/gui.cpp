@@ -56,7 +56,7 @@ GLFWwindow *Gui::init() {
     return window;
 }
 
-void Gui::render(std::vector<CircuitGate::GatePtr> &gates) {
+void Gui::render(std::vector<CircuitGatePtr> &gates) {
     // Poll and handle events (inputs, window resize, etc.)
     glfwPollEvents();
 
@@ -144,7 +144,7 @@ void Gui::renderGrid() {
         draw_list->AddLine(ImVec2(0.0f, y) + win_pos, ImVec2(canvas_sz.x, y) + win_pos, GRID_COLOR);
 }
 
-void Gui::renderGates(std::vector<CircuitGate::GatePtr> &gates) {
+void Gui::renderGates(std::vector<CircuitGatePtr> &gates) {
     ImDrawList *drawList = ImGui::GetWindowDrawList();
     drawList->ChannelsSplit(2);
 
@@ -155,7 +155,7 @@ void Gui::renderGates(std::vector<CircuitGate::GatePtr> &gates) {
     drawList->ChannelsMerge();
 }
 
-ImVec2 Gui::getGateInputSlotPos(const CircuitGate::GatePtr &gate, size_t slotIndex) {
+ImVec2 Gui::getGateInputSlotPos(const CircuitGatePtr &gate, size_t slotIndex) {
     const ImVec2 rectMin = state.scrolling + gate->pos;
     const ImVec2 rectSize = gatesRenderInfo.at(gate->getId()).rectSize;
 
@@ -165,7 +165,7 @@ ImVec2 Gui::getGateInputSlotPos(const CircuitGate::GatePtr &gate, size_t slotInd
     return rectMin + ImVec2(0, yOffset);
 }
 
-ImVec2 Gui::getGateOutputSlotPos(const CircuitGate::GatePtr &gate, size_t slotIndex) {
+ImVec2 Gui::getGateOutputSlotPos(const CircuitGatePtr &gate, size_t slotIndex) {
     const ImVec2 rectMin = state.scrolling + gate->pos;
     const ImVec2 rectSize = gatesRenderInfo.at(gate->getId()).rectSize;
 
@@ -175,7 +175,7 @@ ImVec2 Gui::getGateOutputSlotPos(const CircuitGate::GatePtr &gate, size_t slotIn
     return rectMin + ImVec2(rectSize.x, yOffset);
 }
 
-ImVec2 Gui::calcGateRectSize(const CircuitGate::GatePtr &gate) {
+ImVec2 Gui::calcGateRectSize(const CircuitGatePtr &gate) {
     const bool isLeftGap = gate->getInputsCount() != 0;
     const bool isRightGap = gate->getOutputsCount() != 0;
 
@@ -184,13 +184,10 @@ ImVec2 Gui::calcGateRectSize(const CircuitGate::GatePtr &gate) {
         rectSize.x += SLOT_GAP;
     if (isRightGap)
         rectSize.x += SLOT_GAP;
+    const size_t biggerSlotCount = std::max(gate->getInputsCount(), gate->getOutputsCount());
     rectSize.y = std::max(
             rectSize.y,
-            gate->getInputsCount() * SLOT_RADIUS * 2 + (gate->getInputsCount() + 1) * SLOT_GAP
-    );
-    rectSize.y = std::max(
-            rectSize.y,
-            gate->getOutputsCount() * SLOT_RADIUS * 2 + (gate->getOutputsCount() + 1) * SLOT_GAP
+            biggerSlotCount * SLOT_RADIUS * 2 + (biggerSlotCount + 1) * SLOT_GAP
     );
     rectSize = rectSize + GATE_WINDOW_PADDING + GATE_WINDOW_PADDING;
 
@@ -198,49 +195,40 @@ ImVec2 Gui::calcGateRectSize(const CircuitGate::GatePtr &gate) {
     return rectSize;
 }
 
-void Gui::handleInputSlot(CircuitGate::GatePtr &gate, size_t slotIndex) {
-    if (ImGui::IsItemActive() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        cachedLink = { gate, slotIndex };
-        cachedType = INPUT;
-        std::cout << "START input " << gate->getId() << " " << slotIndex << "\n";
-    }
+void Gui::handleSlotDragDrop(CircuitGatePtr &gate, size_t slotIndex, SlotType slotType) {
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+        CachedLink cachedLink = { gate, slotIndex, slotType };
+        ImGui::SetDragDropPayload("CIRCUIT_LINK", &cachedLink, sizeof(cachedLink), ImGuiCond_Once);
+        ImGui::EndDragDropSource();
 
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        renderLink(getGateInputSlotPos(gate, slotIndex), ImGui::GetMousePos());
-    }
+        if (slotType == INPUT) {
+            renderLink(getGateInputSlotPos(gate, slotIndex), ImGui::GetMousePos());
+        } else {
+            renderLink(ImGui::GetMousePos(), getGateOutputSlotPos(gate, slotIndex));
+        }
 
-    if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        std::cout << "END input " << gate->getId() << " " << slotIndex << "\n";
+    } else if (ImGui::BeginDragDropTarget()) {
+        const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CIRCUIT_LINK");
+        if (!payload || !payload->IsDelivery()) {
+            ImGui::EndDragDropTarget();
+            return;
+        }
 
-        if (!cachedLink || gate == cachedLink->destGate || cachedType == INPUT) return;
+        const CachedLink* cachedLink = (CachedLink*) payload->Data;
 
-        gate->updateInput(cachedLink.value(), slotIndex);
-        cachedLink = {};
-    }
-}
+        if (cachedLink->cachedType != slotType) {
+            if (slotType == INPUT) {
+                gate->updateInput({cachedLink->destGate, cachedLink->destSlotIndex}, slotIndex);
+            } else {
+                cachedLink->destGate->updateInput({gate, slotIndex}, cachedLink->destSlotIndex);
+            }
+        }
 
-void Gui::handleOutputSlot(CircuitGate::GatePtr &gate, size_t slotIndex) {
-    if (ImGui::IsItemActive() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        cachedLink = { gate, slotIndex };
-        cachedType = OUTPUT;
-        std::cout << "START output " << gate->getId() << " " << slotIndex << "\n";
-    }
-
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        renderLink(ImGui::GetMousePos(), getGateOutputSlotPos(gate, slotIndex));
-    }
-
-    if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        std::cout << "END output " << gate->getId() << " " << slotIndex << "\n";
-
-        if (!cachedLink || gate == cachedLink->destGate || cachedType == OUTPUT) return;
-
-        cachedLink->destGate->updateInput({gate, slotIndex}, cachedLink->destSlotIndex);
-        cachedLink = {};
+        ImGui::EndDragDropTarget();
     }
 }
 
-void Gui::renderGate(CircuitGate::GatePtr &gate) {
+void Gui::renderGate(CircuitGatePtr &gate) {
     ImDrawList *drawList = ImGui::GetWindowDrawList();
     const ImGuiIO &io = ImGui::GetIO();
 
@@ -266,7 +254,7 @@ void Gui::renderGate(CircuitGate::GatePtr &gate) {
         ImGui::SetCursorScreenPos(circleCenter - ImVec2(SLOT_RADIUS, SLOT_RADIUS));
         const std::string buttonId = std::to_string(gate->getId()) + std::string("i") + std::to_string(slotIndex);
         ImGui::InvisibleButton(buttonId.c_str(), ImVec2(2 * SLOT_RADIUS, 2 * SLOT_RADIUS));
-        handleInputSlot(gate, slotIndex);
+        handleSlotDragDrop(gate, slotIndex, INPUT);
 
         ImU32 slotColor = (ImGui::IsItemHovered() || ImGui::IsItemActive()) ? SLOT_COLOR_HOVER : SLOT_COLOR;
         drawList->AddCircleFilled(circleCenter, SLOT_RADIUS, slotColor);
@@ -278,7 +266,7 @@ void Gui::renderGate(CircuitGate::GatePtr &gate) {
         ImGui::SetCursorScreenPos(circleCenter - ImVec2(SLOT_RADIUS, SLOT_RADIUS));
         const std::string buttonId = std::to_string(gate->getId()) + std::string("o") + std::to_string(slotIndex);
         ImGui::InvisibleButton(buttonId.c_str(), ImVec2(2 * SLOT_RADIUS, 2 * SLOT_RADIUS));
-        handleOutputSlot(gate, slotIndex);
+        handleSlotDragDrop(gate, slotIndex, OUTPUT);
 
         ImU32 slotColor = (ImGui::IsItemHovered() || ImGui::IsItemActive()) ? SLOT_COLOR_HOVER : SLOT_COLOR;
         drawList->AddCircleFilled(circleCenter, SLOT_RADIUS, slotColor);
@@ -300,7 +288,7 @@ void Gui::renderGate(CircuitGate::GatePtr &gate) {
     ImGui::PopID();
 }
 
-void Gui::renderGatesLinks(std::vector<CircuitGate::GatePtr> &gates) {
+void Gui::renderGatesLinks(std::vector<CircuitGatePtr> &gates) {
     for (auto &gate: gates) {
         const std::vector<CircuitGate::GateLink> &inputs = gate->getInputs();
 
