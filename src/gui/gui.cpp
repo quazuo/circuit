@@ -1,9 +1,31 @@
 #include "gui.h"
+#include "../circuit/visitor.h"
 
 #include <stdexcept>
 #include <GLFW/glfw3.h>
 #include <cmath>
+#include <sstream>
 #include <iostream>
+
+constexpr static ImU32 LINK_COLOR = IM_COL32(200, 200, 100, 255);
+constexpr static ImU32 GATE_COLOR = IM_COL32(60, 60, 60, 255);
+constexpr static ImU32 GATE_COLOR_HOVER = IM_COL32(70, 70, 70, 255);
+constexpr static ImU32 GATE_BORDER_COLOR = IM_COL32(100, 100, 100, 255);
+constexpr static ImU32 SLOT_COLOR = IM_COL32(150, 150, 150, 255);
+constexpr static ImU32 SLOT_COLOR_HOVER = IM_COL32(180, 180, 180, 255);
+
+static ImU32 getPinTypeColor(const CircuitGate::PinType &type) {
+    if (type == CircuitGate::Any)
+        return IM_COL32(90, 90, 90, 255);
+    if (type == CircuitGate::Int)
+        return IM_COL32(0, 78, 173, 255);
+    if (type == CircuitGate::Bool)
+        return IM_COL32(193, 73, 73, 255);
+
+    std::stringstream ss;
+    ss << "invalid output pin type!";
+    throw std::runtime_error(ss.str());
+}
 
 static void glfw_error_callback(int error, const char *description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -12,6 +34,12 @@ static void glfw_error_callback(int error, const char *description) {
 static inline ImVec2 operator+(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
 
 static inline ImVec2 operator-(const ImVec2 &lhs, const ImVec2 &rhs) { return ImVec2(lhs.x - rhs.x, lhs.y - rhs.y); }
+
+struct CircuitVisitor_RenderContent : public CircuitVisitor {
+    void visit(CircuitGate_ConstInt& gate) override {
+        ImGui::InputInt("Value", &gate.value);
+    }
+};
 
 GLFWwindow *Gui::init() {
     glfwSetErrorCallback(glfw_error_callback);
@@ -197,7 +225,7 @@ ImVec2 Gui::calcGateRectSize(const CircuitGatePtr &gate) {
 
 void Gui::handleSlotDragDrop(CircuitGatePtr &gate, size_t slotIndex, SlotType slotType) {
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
-        CachedLink cachedLink = { gate, slotIndex, slotType };
+        CachedLink cachedLink = {gate, slotIndex, slotType};
         ImGui::SetDragDropPayload("CIRCUIT_LINK", &cachedLink, sizeof(cachedLink), ImGuiCond_Once);
         ImGui::EndDragDropSource();
 
@@ -208,24 +236,51 @@ void Gui::handleSlotDragDrop(CircuitGatePtr &gate, size_t slotIndex, SlotType sl
         }
 
     } else if (ImGui::BeginDragDropTarget()) {
-        const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CIRCUIT_LINK");
+        const ImGuiPayload *payload = ImGui::AcceptDragDropPayload("CIRCUIT_LINK");
         if (!payload || !payload->IsDelivery()) {
             ImGui::EndDragDropTarget();
             return;
         }
 
-        const CachedLink* cachedLink = (CachedLink*) payload->Data;
+        const CachedLink *cachedLink = (CachedLink *) payload->Data;
 
-        if (cachedLink->cachedType != slotType) {
-            if (slotType == INPUT) {
-                gate->updateInput({cachedLink->destGate, cachedLink->destSlotIndex}, slotIndex);
-            } else {
-                cachedLink->destGate->updateInput({gate, slotIndex}, cachedLink->destSlotIndex);
-            }
+        if (cachedLink->cachedType == slotType) {
+            ImGui::EndDragDropTarget();
+            return;
+        }
+
+        const CircuitGate::PinType type1 = slotType == INPUT
+                                           ? gate->getInput(slotIndex).type
+                                           : gate->getOutput(slotIndex).type;
+
+        const CircuitGate::PinType type2 = cachedLink->cachedType == INPUT
+                                           ? cachedLink->destGate->getInput(cachedLink->destSlotIndex).type
+                                           : cachedLink->destGate->getOutput(cachedLink->destSlotIndex).type;
+
+        if (type1 != type2) {
+            std::cout << "TypeError\n"; // todo nicer error
+            ImGui::EndDragDropTarget();
+            return;
+        }
+
+        if (slotType == INPUT) {
+            gate->updateInput(cachedLink->destGate, cachedLink->destSlotIndex, slotIndex);
+        } else {
+            cachedLink->destGate->updateInput(gate, slotIndex, cachedLink->destSlotIndex);
         }
 
         ImGui::EndDragDropTarget();
     }
+}
+
+static void onClickEvalButton(CircuitGatePtr &gate) {
+    CircuitVisitor_Eval visitor;
+    gate->acceptVisitor(visitor);
+    if (visitor.didEvalCorrectly()) {
+        std::cout << "\n";
+        gate->print();
+    }
+    gate->clearCaches();
 }
 
 void Gui::renderGate(CircuitGatePtr &gate) {
@@ -240,9 +295,17 @@ void Gui::renderGate(CircuitGatePtr &gate) {
     // display gate contents first
     drawList->ChannelsSetCurrent(1); // foreground
     ImGui::SetCursorScreenPos(rectMin + GATE_WINDOW_PADDING + (isLeftGap ? ImVec2(SLOT_GAP, 0) : ImVec2()));
-    //ImGui::BeginGroup();
-    ImGui::Text("gate");
-    //ImGui::EndGroup();
+    ImGui::BeginGroup();
+    ImGui::Text("%s [ID %d]", gate->getName().c_str(), gate->getId());
+
+    CircuitVisitor_RenderContent renderVisitor;
+    gate->acceptVisitor(renderVisitor);
+
+    ImGui::Button("eval", {50, 20});
+    if (ImGui::IsItemActive() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        onClickEvalButton(gate);
+    }
+    ImGui::EndGroup();
 
     const ImVec2 rectSize = calcGateRectSize(gate);
     const ImVec2 rectMax = rectMin + rectSize;
@@ -256,7 +319,7 @@ void Gui::renderGate(CircuitGatePtr &gate) {
         ImGui::InvisibleButton(buttonId.c_str(), ImVec2(2 * SLOT_RADIUS, 2 * SLOT_RADIUS));
         handleSlotDragDrop(gate, slotIndex, INPUT);
 
-        ImU32 slotColor = (ImGui::IsItemHovered() || ImGui::IsItemActive()) ? SLOT_COLOR_HOVER : SLOT_COLOR;
+        ImU32 slotColor = getPinTypeColor(gate->getInput(slotIndex).type);
         drawList->AddCircleFilled(circleCenter, SLOT_RADIUS, slotColor);
     }
 
@@ -268,7 +331,7 @@ void Gui::renderGate(CircuitGatePtr &gate) {
         ImGui::InvisibleButton(buttonId.c_str(), ImVec2(2 * SLOT_RADIUS, 2 * SLOT_RADIUS));
         handleSlotDragDrop(gate, slotIndex, OUTPUT);
 
-        ImU32 slotColor = (ImGui::IsItemHovered() || ImGui::IsItemActive()) ? SLOT_COLOR_HOVER : SLOT_COLOR;
+        ImU32 slotColor = getPinTypeColor(gate->getOutput(slotIndex).type);
         drawList->AddCircleFilled(circleCenter, SLOT_RADIUS, slotColor);
     }
 
@@ -290,7 +353,7 @@ void Gui::renderGate(CircuitGatePtr &gate) {
 
 void Gui::renderGatesLinks(std::vector<CircuitGatePtr> &gates) {
     for (auto &gate: gates) {
-        const std::vector<CircuitGate::GateLink> &inputs = gate->getInputs();
+        const std::vector<CircuitGate::InputPin> &inputs = gate->getInputs();
 
         for (size_t i = 0; i < inputs.size(); i++) {
             if (!inputs[i].destGate)

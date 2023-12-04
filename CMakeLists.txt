@@ -44,6 +44,8 @@ file(GLOB CIRCUIT_SRCS
         "src/*"
         "src/gui/*"
         "src/circuit/*"
+        "src/circuit/boolean/*"
+        "src/circuit/num/*"
 )
 
 add_executable(circuit ${CIRCUIT_SRCS} ${IMGUI_SRCS} ${IMGUI_IMPL_SRCS})

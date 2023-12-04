@@ -40,14 +40,6 @@ class Gui {
     constexpr static float GATE_CORNER_ROUNDING = 4.0f;
     constexpr static float LINK_WIDTH = 3.0f;
 
-    // colors
-    constexpr static ImU32 LINK_COLOR = IM_COL32(200, 200, 100, 255);
-    constexpr static ImU32 GATE_COLOR = IM_COL32(60, 60, 60, 255);
-    constexpr static ImU32 GATE_COLOR_HOVER = IM_COL32(70, 70, 70, 255);
-    constexpr static ImU32 GATE_BORDER_COLOR = IM_COL32(100, 100, 100, 255);
-    constexpr static ImU32 SLOT_COLOR = IM_COL32(150, 150, 150, 255);
-    constexpr static ImU32 SLOT_COLOR_HOVER = IM_COL32(180, 180, 180, 255);
-
 public:
     GLFWwindow* init();
 
